@@ -278,7 +278,7 @@ class Traceroute(NetworkApplication):
 
             #BUILD HEADER, SET TTL IN HEADER, REBUILD HEADER WITH CHECKSUM, SEND PACKET USING SOCKET
 
-            sourcePort = random.randint(33433, 65535)
+            sourcePort = random.randint(33433, 60000)
             destinationPort = 33433 + seqNum
 
             UDPHeader = struct.pack("!HHHH", sourcePort, destinationPort, 8, 0)
@@ -320,17 +320,13 @@ class Traceroute(NetworkApplication):
 
         except socket.timeout:
             print("Socket Timeout")
-            return None
+            return 1
         
         pass
 
 
 
     def doOneTrace(self, destinationAddress, packetID, timeout, ttl, protocol):
-
-
-        protocolType = socket.getprotobyname(protocol)
-        #ourSocket = socket.socket(socket.AF_INET, socket.SOCK_RAW, protocolType)
 
         if protocol == 'ICMP' or protocol == 'icmp':
             ourSocket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
@@ -349,12 +345,19 @@ class Traceroute(NetworkApplication):
             sentTime = self.sendOneTrace(ourSocket, destinationAddress, packetID, seq_num, ttl, protocol)
             results = self.receiveOneTrace(receiveSocket, packetID, timeout)
             seq_num = seq_num + 1
+            socketTimeout = False
 
-            if results is not None:
+            if results is not None and results != 1:
                 endTime, IPTTL, packetSize, ICMPSeq, ICMPType, sourceIP = results
                 rtt = (endTime - sentTime) * 1000
                 rttArray.append(rtt)
+            elif results == 1:
+                socketTimeout = True
+                print("* ")
     
+        if socketTimeout == True:
+            return
+        
         try:
             hostInfo = socket.gethostbyaddr(sourceIP)
             hostName = hostInfo[0]
@@ -362,7 +365,6 @@ class Traceroute(NetworkApplication):
             hostName = str(sourceIP) 
 
         if(ICMPType == 0 or ICMPType == 3):
-                #print("WE REACHED THE END!!")
                 self.printOneTraceRouteIteration(ttl, sourceIP, rttArray, hostName)
                 ourSocket.close()
                 receiveSocket.close()
@@ -412,11 +414,23 @@ class WebServer(NetworkApplication):
 
     def __init__(self, args):
         print('Web Server starting on port: %i...' % (args.port))
-        # 1. Create server socket
+        # 1. Create server socket - COULD USE SERVERSOCKET LIBRARY OR CREATE SOCKET AS socket.create_server ????
+        port = args.port
+        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         # 2. Bind the server socket to server address and server port
+        serverSocket.bind('127.0.0.1', port)
+
         # 3. Continuously listen for connections to server socket
         # 4. When a connection is accepted, call handleRequest function, passing new connection socket (see https://docs.python.org/3/library/socket.html#socket.socket.accept)
+        serverSocket.listen()
+        print("Listening for connections...")
+        while True:
+            acceptedSocket, acceptedAddress = socket.socket.accept()
+            self.handleRequest(acceptedSocket)
+
         # 5. Close server socket
+
 
 
 class Proxy(NetworkApplication):
