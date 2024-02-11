@@ -402,34 +402,83 @@ class Traceroute(NetworkApplication):
 
 class WebServer(NetworkApplication):
 
-    def handleRequest(tcpSocket):
+    def handleRequest(self, tcpSocket):
         # 1. Receive request message from the client on connection socket
+        requestMessage, requestAddress = tcpSocket.recvfrom(1024)
+        requestMessageString = str(requestMessage, 'utf-8')
+        requestDecoded = requestMessageString.split('\r\n')
+
+        print("Request Message: ", requestDecoded[0])
+
         # 2. Extract the path of the requested object from the message (second part of the HTTP header)
+
+        if(len(requestDecoded[0]) > 0):
+            method, path, type = requestDecoded[0].split(' ')
+            print("METHOD: ", method)
+            print("PATH: ", path)
+            print("TYPE: ", type)
+
         # 3. Read the corresponding file from disk
         # 4. Store in temporary buffer
-        # 5. Send the correct HTTP response error
+            
+        if(method == 'GET'):
+            if path.startswith('/'):
+                path = path[1:]
+            if os.path.isfile(path):
+                with open(path, 'rb') as file:
+                    content = file.read()
+
+                    print("ATTEMPTING TO READ!")
+
+                    response = 'HTTP/1.1 200 OK\r\n'
+                
+                    response += content.decode()
+
+            # 5. Send the correct HTTP response error
+            else:
+                # Error 404
+                response = 'HTTP/1.1 404 Not Found\r\n'
+                response += 'File not found.'
+        else:
+            # Error 501
+            response = 'HTTP/1.1 501 Not Implemented\r\n'
+            response += 'Method not supported.'
+        
+        
         # 6. Send the content of the file to the socket
+            
+        tcpSocket.sendall(response.encode())
+
         # 7. Close the connection socket
+        tcpSocket.close()
         pass
+
+
+
 
     def __init__(self, args):
         print('Web Server starting on port: %i...' % (args.port))
-        # 1. Create server socket - COULD USE SERVERSOCKET LIBRARY OR CREATE SOCKET AS socket.create_server ????
-        port = args.port
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # 2. Bind the server socket to server address and server port
-        serverSocket.bind('127.0.0.1', port)
+        try:
+            # 1. Create server socket - COULD USE SERVERSOCKET LIBRARY OR CREATE SOCKET AS socket.create_server ????
+            port = args.port
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # 3. Continuously listen for connections to server socket
-        # 4. When a connection is accepted, call handleRequest function, passing new connection socket (see https://docs.python.org/3/library/socket.html#socket.socket.accept)
-        serverSocket.listen()
-        print("Listening for connections...")
-        while True:
-            acceptedSocket, acceptedAddress = socket.socket.accept()
-            self.handleRequest(acceptedSocket)
+            # 2. Bind the server socket to server address and server port
+            serverSocket.bind(('127.0.0.1', port))
 
-        # 5. Close server socket
+            # 3. Continuously listen for connections to server socket
+            # 4. When a connection is accepted, call handleRequest function, passing new connection socket (see https://docs.python.org/3/library/socket.html#socket.socket.accept)
+            serverSocket.listen()
+            print("Listening for connections...")
+            while True:
+                acceptedSocket, acceptedAddress = serverSocket.accept()
+                self.handleRequest(acceptedSocket)
+
+        finally:
+            # 5. Close server socket
+                
+            serverSocket.close()
 
 
 
