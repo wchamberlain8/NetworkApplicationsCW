@@ -401,66 +401,69 @@ class Traceroute(NetworkApplication):
 
 
 class WebServer(NetworkApplication):
-
     def handleRequest(self, tcpSocket):
-        # 1. Receive request message from the client on connection socket
-        requestMessage, requestAddress = tcpSocket.recvfrom(1024)
-        requestMessageString = str(requestMessage, 'utf-8')
-        requestDecoded = requestMessageString.split('\r\n')
+        try:
+            # 1. Receive request message from the client on connection socket
+            requestMessage = tcpSocket.recv(1024)
+            requestMessageString = requestMessage.decode('utf-8')
+            requestDecoded = requestMessageString.split('\r\n')
 
-        print("Request Message: ", requestDecoded[0])
+            #print("Request Message: ", requestDecoded[0])
 
-        # 2. Extract the path of the requested object from the message (second part of the HTTP header)
+            # 2. Extract the path of the requested object from the message
+            if len(requestDecoded[0]) > 0:
+                method, path, _ = requestDecoded[0].split(' ')
 
-        if(len(requestDecoded[0]) > 0):
-            method, path, type = requestDecoded[0].split(' ')
-            print("METHOD: ", method)
-            print("PATH: ", path)
-            print("TYPE: ", type)
+                # 3. Read the corresponding file from disk
+                # 4. Store in temporary buffer
+                if method == 'GET':
+                    if path.startswith('/'):
+                        path = path[1:]
+                    if os.path.isfile(path):
+                        with open(path, 'rb') as file:
+                            content = file.read()
 
-        # 3. Read the corresponding file from disk
-        # 4. Store in temporary buffer
-            
-        if(method == 'GET'):
-            if path.startswith('/'):
-                path = path[1:]
-            if os.path.isfile(path):
-                with open(path, 'rb') as file:
-                    content = file.read()
+                        response = 'HTTP/1.1 200 OK\r\n'
+                        response += 'Content-Type: text/html\r\n'
+                        response += '\r\n'
+                        response = response.encode() + content
 
-                    print("ATTEMPTING TO READ!")
+                    # 5. Send the correct HTTP response error
+                    else:
+                        # ERROR 404
+                        response = 'HTTP/1.1 404 Not Found\r\n'
+                        response += 'Content-Type: text/plain\r\n'
+                        response += '\r\n'
+                        response += 'File not found.'
+                        response = response.encode()
 
-                    response = 'HTTP/1.1 200 OK\r\n'
-                
-                    response += content.decode()
+                else:
+                    # ERROR 501
+                    response = 'HTTP/1.1 501 Not Implemented\r\n'
+                    response += 'Content-Type: text/plain\r\n'
+                    response += '\r\n'
+                    response += 'Method not supported.'
+                    response = response.encode()
 
-            # 5. Send the correct HTTP response error
-            else:
-                # Error 404
-                response = 'HTTP/1.1 404 Not Found\r\n'
-                response += 'File not found.'
-        else:
-            # Error 501
-            response = 'HTTP/1.1 501 Not Implemented\r\n'
-            response += 'Method not supported.'
-        
-        
+        except Exception as e:
+            # ERROR 500 (for try catch)
+            response = 'HTTP/1.1 500 Internal Server Error\r\n'
+            response += 'Content-Type: text/plain\r\n'
+            response += '\r\n'
+            response += str(e)
+            response = response.encode()
+
         # 6. Send the content of the file to the socket
-            
-        tcpSocket.sendall(response.encode())
+        tcpSocket.sendall(response)
 
         # 7. Close the connection socket
         tcpSocket.close()
-        pass
-
-
-
 
     def __init__(self, args):
         print('Web Server starting on port: %i...' % (args.port))
 
         try:
-            # 1. Create server socket - COULD USE SERVERSOCKET LIBRARY OR CREATE SOCKET AS socket.create_server ????
+            # 1. Create server socket
             port = args.port
             serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -468,16 +471,14 @@ class WebServer(NetworkApplication):
             serverSocket.bind(('127.0.0.1', port))
 
             # 3. Continuously listen for connections to server socket
-            # 4. When a connection is accepted, call handleRequest function, passing new connection socket (see https://docs.python.org/3/library/socket.html#socket.socket.accept)
             serverSocket.listen()
             print("Listening for connections...")
             while True:
-                acceptedSocket, acceptedAddress = serverSocket.accept()
+                acceptedSocket, _ = serverSocket.accept()
                 self.handleRequest(acceptedSocket)
 
         finally:
-            # 5. Close server socket
-                
+            # 4. Close server socket
             serverSocket.close()
 
 
