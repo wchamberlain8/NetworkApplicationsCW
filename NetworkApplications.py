@@ -486,51 +486,57 @@ class WebServer(NetworkApplication):
 class Proxy(NetworkApplication):
 
     def handleRequest(self, tcpSocket):
-
         requestMessage = tcpSocket.recv(1024).decode('utf-8')
         requestParts = requestMessage.split('\r\n')
-        
-        print("MESSAGE: ", requestMessage)
+
+        #To check for correct message:
+        # print("MESSAGE: ", requestMessage)
 
         if len(requestParts[0]) > 0:
-            method, url, type = requestParts[0].split(' ')
+            method, url, _ = requestParts[0].split(' ')
+
+            #Remove "http://" 
+            url_parts = url.split('//')
+            if len(url_parts) > 1:
+                url = url_parts[1]
 
             if method == 'GET':
-
                 cachedResponse = self.fetchCache(url)
 
                 if cachedResponse:
                     tcpSocket.sendall(cachedResponse)
                     tcpSocket.close()
                 else:
-                    severResponse = self.forwardRequest(requestMessage)
-
-        pass
+                    serverResponse = self.forwardRequest(url)
+                    tcpSocket.sendall(serverResponse.encode())
+                    tcpSocket.close()
 
     def fetchCache(self, url):
         if url in self.cache:
+            print("Retrieving from cache!")
             return self.cache[url]['response']
         else:
             return None
 
-    def updateCache(self, url):
-
-        pass
+    def updateCache(self, url, response):
+        self.cache[url] = {'response': response}
 
     def forwardRequest(self, url):
+        host, path = url.split('/', 1) if '/' in url else (url, '')  # Split host and path
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.connect(('localhost', args.port))
-        request = f"GET {url} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        serverSocket.connect((host, 80))  # Connect to the destination web server
+        request = f"GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
         serverSocket.sendall(request.encode())
-        response = serverSocket.recv(4096)
+
+        response = b''
+        while True:
+            data = serverSocket.recv(1024)
+            if not data:
+                break
+            response += data
+
         serverSocket.close()
-        print(response.decode())
         return response.decode()
-
-
-
-
-
 
 
     def __init__(self, args):
