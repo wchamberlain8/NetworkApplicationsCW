@@ -485,8 +485,76 @@ class WebServer(NetworkApplication):
 
 class Proxy(NetworkApplication):
 
+    def handleRequest(self, tcpSocket):
+
+        requestMessage = tcpSocket.recv(1024).decode('utf-8')
+        requestParts = requestMessage.split('\r\n')
+        
+        print("MESSAGE: ", requestMessage)
+
+        if len(requestParts[0]) > 0:
+            method, url, type = requestParts[0].split(' ')
+
+            if method == 'GET':
+
+                cachedResponse = self.fetchCache(url)
+
+                if cachedResponse:
+                    tcpSocket.sendall(cachedResponse)
+                    tcpSocket.close()
+                else:
+                    severResponse = self.forwardRequest(requestMessage)
+
+        pass
+
+    def fetchCache(self, url):
+        if url in self.cache:
+            return self.cache[url]['response']
+        else:
+            return None
+
+    def updateCache(self, url):
+
+        pass
+
+    def forwardRequest(self, url):
+        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serverSocket.connect(('localhost', args.port))
+        request = f"GET {url} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        serverSocket.sendall(request.encode())
+        response = serverSocket.recv(4096)
+        serverSocket.close()
+        print(response.decode())
+        return response.decode()
+
+
+
+
+
+
+
     def __init__(self, args):
         print('Web Proxy starting on port: %i...' % (args.port))
+
+        self.cache = {}
+
+        try:
+            port = args.port
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            serverSocket.bind(('127.0.0.1', port))
+
+            serverSocket.listen()
+            print("Listening for connections...")
+            while True:
+                acceptedSocket, _ = serverSocket.accept()
+                self.handleRequest(acceptedSocket)
+
+        finally:
+            serverSocket.close()
+
+
+
 
 # Do not delete or modify the code below
 if __name__ == "__main__":
