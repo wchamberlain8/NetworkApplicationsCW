@@ -214,7 +214,11 @@ class ICMPPing(NetworkApplication):
     def __init__(self, args):
         print('Ping to: %s...' % (args.hostname))
         # 1. Look up hostname, resolving it to an IP address
-        destinationAddress = socket.gethostbyname(args.hostname)
+        try:
+            destinationAddress = socket.gethostbyname(args.hostname)
+        except socket.gaierror:
+            print("Host address could not be found, ensure address is valid and exists")
+            return
 
         # 2. Repeat below args.count times
         # 3. Call doOnePing function, approximately every second, below is just an example
@@ -256,7 +260,7 @@ class Traceroute(NetworkApplication):
 
     def sendOneTrace(self, ourSocket, destinationAddress, ID, seqNum, ttl, protocol):
         
-        if(protocol == 'ICMP'):
+        if(protocol.upper() == 'ICMP'):
             #Build ICMP header 
             ICMPHeader = struct.pack("!BBHHH", 8, 0, 0, ID, seqNum)
             
@@ -274,7 +278,7 @@ class Traceroute(NetworkApplication):
 
             return time.time()
         
-        elif(protocol == 'UDP'):
+        elif(protocol.upper() == 'UDP'):
 
             #BUILD HEADER, SET TTL IN HEADER, REBUILD HEADER WITH CHECKSUM, SEND PACKET USING SOCKET
 
@@ -319,7 +323,7 @@ class Traceroute(NetworkApplication):
             return endTime, IPTTL, packetSize, ICMPSeq, ICMPType, sourceIP
 
         except socket.timeout:
-            print("Socket Timeout")
+            #print("Socket Timeout")
             return 1
         
         pass
@@ -334,7 +338,7 @@ class Traceroute(NetworkApplication):
             ourSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         else:
             print("Invalid protocol. Supported protocols are ICMP and UDP.")
-            return
+            return True
 
         receiveSocket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 
@@ -353,9 +357,9 @@ class Traceroute(NetworkApplication):
                 rttArray.append(rtt)
             elif results == 1:
                 socketTimeout = True
-                print("* ")
     
         if socketTimeout == True:
+            print(ttl, "* * *")
             return
         
         try:
@@ -381,7 +385,13 @@ class Traceroute(NetworkApplication):
     def __init__(self, args):
         print('Traceroute to: %s...' % (args.hostname))
 
-        destinationAddress = socket.gethostbyname(args.hostname)
+        try:
+            destinationAddress = socket.gethostbyname(args.hostname)
+        except socket.gaierror:
+            print("Host address could not be found, ensure address is valid and exists")
+            return
+
+
         packetID = random.randint(1, 10000)
         #packetID = 0
         timeout = args.timeout
@@ -504,16 +514,16 @@ class Proxy(NetworkApplication):
                 cachedResponse = self.fetchCache(url)
 
                 if cachedResponse:
-                    tcpSocket.sendall(cachedResponse)
+                    tcpSocket.sendall(cachedResponse.encode())
                     tcpSocket.close()
                 else:
                     serverResponse = self.forwardRequest(url)
+                    self.updateCache(url, serverResponse)
                     tcpSocket.sendall(serverResponse.encode())
                     tcpSocket.close()
 
     def fetchCache(self, url):
         if url in self.cache:
-            print("Retrieving from cache!")
             return self.cache[url]['response']
         else:
             return None
@@ -522,8 +532,9 @@ class Proxy(NetworkApplication):
         self.cache[url] = {'response': response}
 
     def forwardRequest(self, url):
-        host, path = url.split('/', 1) if '/' in url else (url, '')  # Split host and path
+        host, path = url.split('/', 1) if '/' in url else (url, '')
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
         serverSocket.connect((host, 80))  # Connect to the destination web server
         request = f"GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
         serverSocket.sendall(request.encode())
