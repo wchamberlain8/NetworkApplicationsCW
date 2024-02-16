@@ -302,6 +302,8 @@ class Traceroute(NetworkApplication):
     def receiveOneTrace(self, icmpSocket, packetID, timeout):
         icmpSocket.settimeout(timeout)
 
+        #Always recieve the packets through an ICMP Socket
+
         try:
             data, address = icmpSocket.recvfrom(1024)
             sourceIP = address[0]
@@ -310,6 +312,10 @@ class Traceroute(NetworkApplication):
 
             ICMPHeader = data[20:28]
             ICMPType, ICMPCode, checksum, recievedID, ICMPSeq = struct.unpack("!BBHHH", ICMPHeader)
+
+            #Type 11 - Time exceeded 
+            #Type 0 - Destination Reached
+            #Type 3 - Destination Unreachable (needed for UDP)
 
             if(ICMPType == 11 or ICMPType == 0 or ICMPType == 3):
                 IPHeader = data[:20]
@@ -332,6 +338,7 @@ class Traceroute(NetworkApplication):
 
     def doOneTrace(self, destinationAddress, packetID, timeout, ttl, protocol):
 
+        #Open correct socket based on user's input of protocol
         if protocol == 'ICMP' or protocol == 'icmp':
             ourSocket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
         elif protocol == 'UDP' or protocol == 'udp':
@@ -345,6 +352,7 @@ class Traceroute(NetworkApplication):
         seq_num = 1
         rttArray = []
 
+        #Send out 3 packets
         while seq_num <= 3:
             sentTime = self.sendOneTrace(ourSocket, destinationAddress, packetID, seq_num, ttl, protocol)
             results = self.receiveOneTrace(receiveSocket, packetID, timeout)
@@ -354,26 +362,29 @@ class Traceroute(NetworkApplication):
             if results is not None and results != 1:
                 endTime, IPTTL, packetSize, ICMPSeq, ICMPType, sourceIP = results
                 rtt = (endTime - sentTime) * 1000
-                rttArray.append(rtt)
+                rttArray.append(rtt) #Collecting time data
             elif results == 1:
                 socketTimeout = True
     
-        if socketTimeout == True:
+        if socketTimeout == True:   #If all 3 packets resulted in a timeout, print * to indicate such
             print(ttl, "* * *")
             return
         
+        #Try and retrive the host name from the source IP (if there is one)
         try:
             hostInfo = socket.gethostbyaddr(sourceIP)
             hostName = hostInfo[0]
         except socket.herror:
             hostName = str(sourceIP) 
 
+        #If we recieve type 0 or 3 (destination reached/unreachable) break the main loop
         if(ICMPType == 0 or ICMPType == 3):
                 self.printOneTraceRouteIteration(ttl, sourceIP, rttArray, hostName)
                 ourSocket.close()
                 receiveSocket.close()
                 return True
 
+        #Otherwise, print out the details of this hop and move on
         self.printOneTraceRouteIteration(ttl, sourceIP, rttArray, hostName)
         ourSocket.close()
         receiveSocket.close()
@@ -385,20 +396,22 @@ class Traceroute(NetworkApplication):
     def __init__(self, args):
         print('Traceroute to: %s...' % (args.hostname))
 
+        #Get the user's desired destination
         try:
             destinationAddress = socket.gethostbyname(args.hostname)
         except socket.gaierror:
             print("Host address could not be found, ensure address is valid and exists")
             return
 
-
+        #Initalise values, random packet id and args for timeout and protocol
         packetID = random.randint(1, 10000)
-        #packetID = 0
         timeout = args.timeout
         protocol = args.protocol
         maxHops = 30
         ttl = 1
 
+        #The ttl starts at 1 and goes on for the max amount of hops (traceroute default is 30)
+        #Each time round, the ttl is increased meaning we got to the next router
         while ttl < (maxHops + 1):
             end = self.doOneTrace(destinationAddress, packetID, timeout, ttl, protocol)
             ttl = ttl + 1
@@ -407,7 +420,12 @@ class Traceroute(NetworkApplication):
                 break
         
 
-   
+
+
+  #*************************************************************************************************************************************************************************
+ 
+
+
 
 
 class WebServer(NetworkApplication):
@@ -496,14 +514,14 @@ class WebServer(NetworkApplication):
 class Proxy(NetworkApplication):
 
     def handleRequest(self, tcpSocket):
-        requestMessage = tcpSocket.recv(1024).decode('utf-8')
+        requestMessage = tcpSocket.recv(1024).decode('utf-8') #Get the message
         requestParts = requestMessage.split('\r\n')
 
         #To check for correct message:
         # print("MESSAGE: ", requestMessage)
 
         if len(requestParts[0]) > 0:
-            method, url, _ = requestParts[0].split(' ')
+            method, url, _ = requestParts[0].split(' ') #Get the method and url/path
 
             #Remove "http://" 
             url_parts = url.split('//')
@@ -511,48 +529,58 @@ class Proxy(NetworkApplication):
                 url = url_parts[1]
 
             if method == 'GET':
-                cachedResponse = self.fetchCache(url)
+                cachedResponse = self.fetchCache(url) #See if it exists in the cache
 
                 if cachedResponse:
-                    tcpSocket.sendall(cachedResponse.encode())
+                    tcpSocket.sendall(cachedResponse.encode()) #If it does, send it out
                     tcpSocket.close()
                 else:
-                    serverResponse = self.forwardRequest(url)
-                    self.updateCache(url, serverResponse)
-                    tcpSocket.sendall(serverResponse.encode())
+                    serverResponse = self.forwardRequest(url) #If it doesn't, forward request to web server 
+                    self.updateCache(url, serverResponse)     #Then update our cache with the response
+                    tcpSocket.sendall(serverResponse.encode())#Finally send out the response
                     tcpSocket.close()
 
+
+    #Helper function to get a response of a related url from the cache if it exists
     def fetchCache(self, url):
         if url in self.cache:
             return self.cache[url]['response']
         else:
             return None
+        
 
+    #Helper function to update the cache
     def updateCache(self, url, response):
         self.cache[url] = {'response': response}
 
+
+
     def forwardRequest(self, url):
-        host, path = url.split('/', 1) if '/' in url else (url, '')
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host, path = url.split('/', 1) if '/' in url else (url, '') #Split host and the path
+        try:
+            serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        serverSocket.connect((host, 80))  # Connect to the destination web server
-        request = f"GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-        serverSocket.sendall(request.encode())
+            serverSocket.connect((host, 80))  #Connect to the web server
+            request = f"GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n" #Create a request
+            serverSocket.sendall(request.encode()) #Send the request
 
-        response = b''
-        while True:
-            data = serverSocket.recv(1024)
-            if not data:
-                break
-            response += data
+            response = b''
+            while True: #while loop incase of dodgy transmission
+                data = serverSocket.recv(1024)
+                if not data:
+                    break
+                response += data
 
-        serverSocket.close()
-        return response.decode()
+            serverSocket.close()
+            return response.decode()
+        except socket.gaierror: #Send back an error 404 if thats what we recieved back from the web server
+            return "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nRequested webpage not found."
 
 
     def __init__(self, args):
         print('Web Proxy starting on port: %i...' % (args.port))
 
+        #Our cache is a python dictionary
         self.cache = {}
 
         try:
